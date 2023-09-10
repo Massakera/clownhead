@@ -1,6 +1,6 @@
 mutable struct Loc
     start::Int
-    end::Int
+    end_pos::Int
     filename::String
 end
 
