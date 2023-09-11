@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import List, Union
+from typing import List, Union, Optional
 
 class Loc:
     def __init__(self, start: int, end_pos: int, filename: str):
@@ -8,19 +8,19 @@ class Loc:
         self.filename = filename
 
 class BinaryOp(Enum):
-    Add = auto()
-    Sub = auto()
-    Mul = auto()
-    Div = auto()
-    Rem = auto()
-    Eq = auto()
-    Neq = auto()
-    Lt = auto()
-    Gt = auto()
-    Lte = auto()
-    Gte = auto()
-    And = auto()
-    Or = auto()
+    Add = "Add"
+    Sub = "Sub"
+    Mul = "Mul"
+    Div = "Div"
+    Rem = "Rem"
+    Eq  = "Eq"
+    Neq = "Neq"
+    Lt  = "Lt"
+    Gt  = "Gt"
+    Lte = "Lte"
+    Gte = "Gte"
+    And = "And"
+    Or  = "Or"
 
 class Parameter:
     def __init__(self, text: str, location: Loc):
@@ -78,10 +78,11 @@ class Call(Term):
         self.location = location
 
 class Function(Term):
-    def __init__(self, parameters: List[Parameter], value: Term, location: Loc):
+    def __init__(self, parameters: List[Parameter], value: Term, location: Loc, name: Optional[str]):
         self.parameters = parameters
         self.value = value
         self.location = location
+        self.name = name
 
 class Print(Term):
     def __init__(self, value: Term, location: Loc):

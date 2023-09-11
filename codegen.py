@@ -1,14 +1,16 @@
 from llvmlite import ir
 from llvmlite.ir import values
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple, Union, Optional
 from enum import Enum
 
-context = ir.Context()
-module = ir.Module(name="rinha", context=context)
-builder = ir.IRBuilder(module.context)
+from my_ast import Binary, Call, Function, If, Print, Var, Let, Int, BinaryOp
 
+context = ir.Context()
+module = ir.Module(name="rinha")
+        
 class SymbolTable:
-    def __init__(self):
+    def __init__(self, parent: Optional['SymbolTable'] = None):
+        self.parent = parent
         self.variables: Dict[str, values.Value] = {}
         self.functions: Dict[str, ir.Function] = {}
 
@@ -23,12 +25,20 @@ class SymbolTable:
             return ("variable", self.variables[name])
         elif name in self.functions:
             return ("function", self.functions[name])
+        elif self.parent:  # If the symbol was not found in the current scope, check the parent scope.
+            print(f"searching parent: {self.parent.functions}")
+            return self.parent.lookup(name)
         else:
             return ("none", None)
-        
-class SymbolType(Enum):
-    Function = 1
-    Variable = 2
+
+class SymbolType(str, Enum):
+    Function = "function"
+    Variable = "variable"
+
+
+class CodeGenError(Exception):
+    pass
+
 
 def emit_add(builder: ir.IRBuilder, lhs: values.Value, rhs: values.Value) -> values.Value:
     if lhs.type.is_integer:
@@ -78,25 +88,8 @@ def emit_lt(builder: ir.IRBuilder, lhs: values.Value, rhs: values.Value) -> valu
     if lhs.type == int32_type and rhs.type == int32_type:
         return builder.icmp_signed('<', lhs, rhs, name="lt_tmp")
     else:
+        print(f"lhs type: {lhs.type}, rhs type: {rhs.type}")
         raise CodeGenError("Unsupported type for less-than check")
-
-class CodeGenError(Exception):
-    pass
-
-class BinaryOp(Enum):
-    Add = 1
-    Sub = 2
-    Mul = 3
-    Div = 4
-    Rem = 5
-    Eq = 6
-    Neq = 7
-    Lt = 8
-    Gt = 9
-    Lte = 10
-    Gte = 11
-    And = 12
-    Or = 13
 
 def emit_gt(builder: ir.IRBuilder, lhs: ir.Value, rhs: ir.Value) -> ir.Value:
     int32_type = ir.IntType(32)
@@ -149,84 +142,124 @@ BINARY_OP_DISPATCH = {
     BinaryOp.Or: emit_or
 }
 
-# Assuming Binary is a class you have that represents a binary expression node
-def codegen(node, module, symtab):
-    builder = ir.IRBuilder(module.context)
-    
-    # Note: You will need a codegen function for node.lhs and node.rhs 
-    # For now, I will assume such a function exists and takes the same arguments
-    lhs_val = codegen(node.lhs, module, symtab)
-    rhs_val = codegen(node.rhs, module, symtab)
-    
+def codegen(node, module, current_symtab, builder):
+    if isinstance(node, Let):
+        return codegen_let(node, module, current_symtab, builder)
+    elif isinstance(node, Binary):
+        return codegen_binary(node, module, current_symtab, builder)
+    elif isinstance(node, Var):
+        return codegen_var(node, module, current_symtab, builder)
+    elif isinstance(node, Function):
+        return codegen_function(node, module, current_symtab, builder)
+    elif isinstance(node, If):
+        return codegen_if(node, module, current_symtab, builder)
+    elif isinstance(node, Call):
+        return codegen_call(node, module, current_symtab, builder)
+    elif isinstance(node, Print):
+        return codegen_print(node, module, current_symtab, builder)
+    elif isinstance(node, Int):
+        return codegen_int(node, module, current_symtab)
+    else:
+        raise CodeGenError(f"Unsupported node type: {type(node)}")
+
+def codegen_binary(node, module, current_symtab, builder):
+    print("inside codegen_binary")
+    lhs_val = codegen(node.lhs, module, current_symtab, builder)
+    rhs_val = codegen(node.rhs, module, current_symtab, builder)
+
     # Type conversion logic
-    if isinstance(lhs_val, ir.Argument) and isinstance(rhs_val, ir.ConstantInt):
+    if isinstance(lhs_val, ir.Argument) and isinstance(rhs_val, ir.Constant) and isinstance(rhs_val.type, ir.IntType):
         lhs_val = builder.bitcast(lhs_val, rhs_val.type, name="cast_lhs")
-    elif isinstance(rhs_val, ir.Argument) and isinstance(lhs_val, ir.ConstantInt):
+    elif isinstance(rhs_val, ir.Argument) and isinstance(lhs_val, ir.Constant) and isinstance(lhs_val.type, ir.IntType):
         rhs_val = builder.bitcast(rhs_val, lhs_val.type, name="cast_rhs")
 
     if lhs_val.type != rhs_val.type:
-        raise CodeGenError("Type mismatch in binary operation")
+        raise CodeGenError(f"Type mismatch in binary operation. lhs: {lhs_val.type}, rhs: {rhs_val.type}")
 
-    emit_func = BINARY_OP_DISPATCH.get(node.op)
-    if emit_func:
-        return emit_func(builder, lhs_val, rhs_val)
+    emit_func = None
+    if node.op in BINARY_OP_DISPATCH.keys():
+        emit_func = BINARY_OP_DISPATCH[node.op]
     else:
-        raise CodeGenError("Unsupported binary operation")
+        raise CodeGenError(f"Unsupported binary operation: {node.op}. Available operations: {BINARY_OP_DISPATCH.keys()}")
+
+    return emit_func(builder, lhs_val, rhs_val)
 
 
-def codegen_int(node, module, symtab):
+def codegen_int(node, module, current_symtab):
+    print("inside codegen_int")
     int_type = ir.IntType(32)
     return ir.Constant(int_type, node.value)
 
-def codegen_call(node, module, symtab):
-    func_type, func = symtab.lookup(node.callee.text)
+def codegen_call(node, module, current_symtab, builder):
+    print("inside codegen_call")
+    func_type, func = current_symtab.lookup(node.callee.text)
+    print(f"Looking up {node.callee.text} in symtab:", current_symtab.lookup(node.callee.text))
     if func_type == SymbolType.Function:
         if not func:
             raise CodeGenError(f"Undefined function: {node.callee.text}")
         
-        callee_value = codegen(node.callee, module, symtab)
+        callee_value = func
         if not isinstance(callee_value, ir.Function):
             raise CodeGenError(f"Callee is not a callable entity: {node.callee.text}")
         
         # Argument Code Generation
-        arg_values = [codegen(arg, module, symtab) for arg in node.arguments]
-        
-        builder = ir.IRBuilder(module.context)
+        arg_values = [codegen(arg, module, builder, current_symtab) for arg in node.arguments]
+    
         return builder.call(callee_value, arg_values)
     else:
+        print(f"symtab in else {current_symtab.functions}")  # Adjust based on how your symbol table represents data.
         raise CodeGenError(f"Expected function but found variable or undefined reference: {node.callee.text}")
 
-def codegen_let(let_expr, module, symtab):
-    value = codegen(let_expr.value, module, symtab)
-    symtab[let_expr.name.text] = value
-    return codegen(let_expr.next_expr, module, symtab)
+def codegen_let(let_expr, module, current_symtab, builder):
+    print("inside codegen_let")
+    value = codegen(let_expr.value, module, current_symtab, builder)
+    current_symtab.insert_variable(let_expr.name.text, value)   # using insert_variable method
+    return codegen(let_expr.next_expr, module, current_symtab, builder)
 
-def codegen_function(node, module, symtab):
+ANONYMOUS_FUNCTION_COUNT = 0
+
+def codegen_function(node, module, current_symtab, builder):
+    global ANONYMOUS_FUNCTION_COUNT
+
+    print("inside codegen_function")
     int_type = ir.IntType(32)
     param_types = [int_type for _ in node.parameters]
     func_type = ir.FunctionType(int_type, param_types)
-    
-    # For now, let's assume the function is always named "anonymous_function"
-    func = ir.Function(module, func_type, name="anonymous_function")
-    
+    function_symtab = SymbolTable(parent=current_symtab)    
+    func_name = node.name if node.name else f"anonymous_function_{ANONYMOUS_FUNCTION_COUNT}"
+
+    ANONYMOUS_FUNCTION_COUNT += 1  # increment the counter for next anonymous function
+
+    func = ir.Function(module, func_type, name=func_name)    
+
+    # Insert the function into the current symbol table BEFORE processing the function body.
+    current_symtab.insert_function(func_name, func)
+    print(f"Inserted function {func_name} into symtab. Current functions: {current_symtab.functions}")
+
     entry_block = func.append_basic_block(name="entry")
     builder = ir.IRBuilder(entry_block)
     
     # Map parameters to their corresponding LLVM values
     for arg, param in zip(func.args, node.parameters):
         arg.name = param.text
-        symtab[param.text] = arg
+        function_symtab.insert_variable(param.text, arg)
 
-    ret_val = codegen(node.value, module, symtab)
+    print(function_symtab.variables)
+    print(function_symtab.functions)
+    print(current_symtab.variables)
+    print(current_symtab.functions)
+
+    ret_val = codegen(node.value, module, function_symtab, builder)
+    print("ret_val was triggered")
     builder.ret(ret_val)
+    print("Current symtab:", function_symtab.functions)
 
-    # Insert the function into the symbol table
-    symtab["anonymous_function"] = func
     return func
 
 
-def codegen_if(node, module, symtab):
-    cond_val = codegen(node.condition, module, symtab)
+def codegen_if(node, module, current_symtab, builder):
+    print("inside codegen_if")
+    cond_val = codegen(node.condition, module, current_symtab, builder)
     func = builder.block.function
 
     then_bb = func.append_basic_block(name="then")
@@ -236,12 +269,12 @@ def codegen_if(node, module, symtab):
     builder.cbranch(cond_val, then_bb, else_bb)
 
     builder.position_at_end(then_bb)
-    then_val = codegen(node.thenBranch, module, symtab)
+    then_val = codegen(node.then, module, current_symtab, builder)
     builder.branch(merge_bb)
     then_bb = builder.block
 
     builder.position_at_end(else_bb)
-    else_val = codegen(node.elseBranch, module, symtab)
+    else_val = codegen(node.otherwise, module, current_symtab, builder)
     builder.branch(merge_bb)
     else_bb = builder.block
 
@@ -253,8 +286,9 @@ def codegen_if(node, module, symtab):
 
     return phi
 
-def codegen_var(node, module, symtab):
-    var_type, value = symtab.lookup(node.text)
+def codegen_var(node, module, current_symtab, builder):
+    print("inside codegen_var")
+    var_type, value = current_symtab.lookup(node.text)
     if var_type == SymbolType.Variable:
         if not value:
             raise CodeGenError(f"Undefined variable: {node.text}")
@@ -271,9 +305,10 @@ def declare_printf(module):
     printf_func = ir.Function(module, printf_type, name="printf")
     return printf_func
 
-def codegen_print(node, module, symtab):
+def codegen_print(node, module, current_symtab, builder):
+    print("inside codegen_print")
     printf_func = declare_printf(module)
-    value = codegen(node.value, module, symtab)
+    value = codegen(node.value, module, builder, current_symtab)
 
     if isinstance(value.type, ir.IntType) and value.type.width == 32:
         format_str = "%d\n"
@@ -296,6 +331,18 @@ def codegen_print(node, module, symtab):
 def generate_code(ast):
     context = ir.Context()
     module = ir.Module(name="rinha", context=context)
-    symtab = SymbolTable()
-    codegen(ast.expression, module, symtab)
+    current_symtab = SymbolTable()
+    
+    # Create the main function or the starting point of your code
+    # Assuming a function type of void() for simplicity
+    func_type = ir.FunctionType(ir.VoidType(), [])
+    main_func = ir.Function(module, func_type, name="main")
+    entry_block = main_func.append_basic_block(name="entry")
+    
+    # Position the builder at the entry block
+    builder = ir.IRBuilder(entry_block)
+    
+    # Now, pass the builder to your codegen function
+    codegen(ast.expression, module, current_symtab, builder)
+    
     return module
