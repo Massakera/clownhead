@@ -3,6 +3,10 @@ from llvmlite.ir import values
 from typing import Dict, Tuple, Union
 from enum import Enum
 
+context = ir.Context()
+module = ir.Module(name="rinha", context=context)
+builder = ir.IRBuilder(module.context)
+
 class SymbolTable:
     def __init__(self):
         self.variables: Dict[str, values.Value] = {}
@@ -292,9 +296,6 @@ def codegen_print(node, module, symtab):
 def generate_code(ast):
     context = ir.Context()
     module = ir.Module(name="rinha", context=context)
-    entry = function.append_basic_block("entry")
-    global builder
-    builder = ir.IRBuilder(entry)
     symtab = SymbolTable()
-    codegen(ast.expression, module, symtab, builder)
+    codegen(ast.expression, module, symtab)
     return module
