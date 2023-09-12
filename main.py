@@ -2,6 +2,8 @@ import json
 from my_ast import File, Loc, Parameter, Function, If, Print, Let, Binary, Var, Call, Int, BinaryOp
 from codegen import generate_code
 from typing import Dict, Any
+import subprocess
+from llvmlite import binding
 
 def parse_ast_from_json(filename: str) -> Dict[str, Any]:
     with open(filename, 'r') as f:
@@ -89,7 +91,6 @@ def convert_location(data: Dict[str, Any]) -> Loc:
 def dict_to_ast(data: Dict[str, Any]) -> File:
     expression = convert_expression(data["expression"])
     
-    # Assuming the location data is at the top level of the JSON data:
     location = convert_location(data["location"])
 
     # Extract the filename from the location data or use a placeholder
@@ -104,13 +105,12 @@ def main():
         print(f"this is the ast: {ast}")
         mod = generate_code(ast)
 
-        # Print the generated code
         print(mod)
 
     except Exception as e:
         print(f"Error: {e}")
         import traceback
-        traceback.print_exc()  # Print the stack trace for more information
+        traceback.print_exc()  
 
 if __name__ == "__main__":
     main()

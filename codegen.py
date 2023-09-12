@@ -7,6 +7,8 @@ from my_ast import Binary, Call, Function, If, Print, Var, Let, Int, BinaryOp
 
 context = ir.Context()
 module = ir.Module(name="rinha")
+ANONYMOUS_FUNCTION_COUNT = 0
+
         
 class SymbolTable:
     def __init__(self, parent: Optional['SymbolTable'] = None):
@@ -14,10 +16,15 @@ class SymbolTable:
         self.variables: Dict[str, values.Value] = {}
         self.functions: Dict[str, ir.Function] = {}
 
+
     def insert_variable(self, name: str, value: values.Value):
+        if name in self.functions:
+            raise ValueError(f"A function named '{name}' already exists in the current scope.")
         self.variables[name] = value
 
     def insert_function(self, name: str, func: ir.Function):
+        if name in self.variables:
+            raise ValueError(f"A variable named '{name}' already exists in the current scope.")
         self.functions[name] = func
 
     def lookup(self, name: str) -> Tuple[str, Union[values.Value, None]]:
@@ -25,7 +32,7 @@ class SymbolTable:
             return ("variable", self.variables[name])
         elif name in self.functions:
             return ("function", self.functions[name])
-        elif self.parent:  # If the symbol was not found in the current scope, check the parent scope.
+        elif self.parent:  
             print(f"searching parent: {self.parent.functions}")
             return self.parent.lookup(name)
         else:
@@ -41,13 +48,13 @@ class CodeGenError(Exception):
 
 
 def emit_add(builder: ir.IRBuilder, lhs: values.Value, rhs: values.Value) -> values.Value:
-    if lhs.type.is_integer:
+    if builder:
         return builder.add(lhs, rhs, name="addtmp")
     else:
         raise CodeGenError("Unsupported operand type for addition")
 
 def emit_sub(builder: ir.IRBuilder, lhs: values.Value, rhs: values.Value) -> values.Value:
-    if lhs.type.is_integer:
+    if isinstance(lhs.type, ir.IntType):
         return builder.sub(lhs, rhs, name="subtmp")
     else:
         raise CodeGenError("Unsupported operand type for subtraction")
@@ -167,7 +174,6 @@ def codegen_binary(node, module, current_symtab, builder):
     lhs_val = codegen(node.lhs, module, current_symtab, builder)
     rhs_val = codegen(node.rhs, module, current_symtab, builder)
 
-    # Type conversion logic
     if isinstance(lhs_val, ir.Argument) and isinstance(rhs_val, ir.Constant) and isinstance(rhs_val.type, ir.IntType):
         lhs_val = builder.bitcast(lhs_val, rhs_val.type, name="cast_lhs")
     elif isinstance(rhs_val, ir.Argument) and isinstance(lhs_val, ir.Constant) and isinstance(lhs_val.type, ir.IntType):
@@ -194,29 +200,30 @@ def codegen_call(node, module, current_symtab, builder):
     print("inside codegen_call")
     func_type, func = current_symtab.lookup(node.callee.text)
     print(f"Looking up {node.callee.text} in symtab:", current_symtab.lookup(node.callee.text))
-    if func_type == SymbolType.Function:
-        if not func:
-            raise CodeGenError(f"Undefined function: {node.callee.text}")
-        
-        callee_value = func
-        if not isinstance(callee_value, ir.Function):
-            raise CodeGenError(f"Callee is not a callable entity: {node.callee.text}")
-        
-        # Argument Code Generation
-        arg_values = [codegen(arg, module, builder, current_symtab) for arg in node.arguments]
-    
-        return builder.call(callee_value, arg_values)
-    else:
-        print(f"symtab in else {current_symtab.functions}")  # Adjust based on how your symbol table represents data.
-        raise CodeGenError(f"Expected function but found variable or undefined reference: {node.callee.text}")
+
+    if func_type != "function":
+        raise CodeGenError(f"Expected function but found {func_type}: {node.callee.text}")
+
+    if not func:
+        raise CodeGenError(f"Undefined function: {node.callee.text}")
+
+    callee_value = func
+    if not isinstance(callee_value, ir.Function):
+        raise CodeGenError(f"Callee is not a callable entity: {node.callee.text}")
+
+    arg_values = [codegen(arg, module, current_symtab, builder) for arg in node.arguments]
+
+    return builder.call(callee_value, arg_values)
 
 def codegen_let(let_expr, module, current_symtab, builder):
     print("inside codegen_let")
-    value = codegen(let_expr.value, module, current_symtab, builder)
-    current_symtab.insert_variable(let_expr.name.text, value)   # using insert_variable method
-    return codegen(let_expr.next_expr, module, current_symtab, builder)
-
-ANONYMOUS_FUNCTION_COUNT = 0
+    value = codegen(let_expr.value, module, current_symtab, builder)  
+    if isinstance(value, ir.Function):
+        current_symtab.insert_function(let_expr.name.text, value)
+    else:
+        current_symtab.insert_variable(let_expr.name.text, value)
+    
+    return codegen(let_expr.next, module, current_symtab, builder)
 
 def codegen_function(node, module, current_symtab, builder):
     global ANONYMOUS_FUNCTION_COUNT
@@ -228,18 +235,16 @@ def codegen_function(node, module, current_symtab, builder):
     function_symtab = SymbolTable(parent=current_symtab)    
     func_name = node.name if node.name else f"anonymous_function_{ANONYMOUS_FUNCTION_COUNT}"
 
-    ANONYMOUS_FUNCTION_COUNT += 1  # increment the counter for next anonymous function
+    ANONYMOUS_FUNCTION_COUNT += 1  
 
     func = ir.Function(module, func_type, name=func_name)    
 
-    # Insert the function into the current symbol table BEFORE processing the function body.
     current_symtab.insert_function(func_name, func)
     print(f"Inserted function {func_name} into symtab. Current functions: {current_symtab.functions}")
 
     entry_block = func.append_basic_block(name="entry")
     builder = ir.IRBuilder(entry_block)
     
-    # Map parameters to their corresponding LLVM values
     for arg, param in zip(func.args, node.parameters):
         arg.name = param.text
         function_symtab.insert_variable(param.text, arg)
@@ -308,7 +313,7 @@ def declare_printf(module):
 def codegen_print(node, module, current_symtab, builder):
     print("inside codegen_print")
     printf_func = declare_printf(module)
-    value = codegen(node.value, module, builder, current_symtab)
+    value = codegen(node.value, module, current_symtab, builder)
 
     if isinstance(value.type, ir.IntType) and value.type.width == 32:
         format_str = "%d\n"
@@ -333,16 +338,12 @@ def generate_code(ast):
     module = ir.Module(name="rinha", context=context)
     current_symtab = SymbolTable()
     
-    # Create the main function or the starting point of your code
-    # Assuming a function type of void() for simplicity
     func_type = ir.FunctionType(ir.VoidType(), [])
     main_func = ir.Function(module, func_type, name="main")
     entry_block = main_func.append_basic_block(name="entry")
     
-    # Position the builder at the entry block
     builder = ir.IRBuilder(entry_block)
     
-    # Now, pass the builder to your codegen function
     codegen(ast.expression, module, current_symtab, builder)
     
     return module
