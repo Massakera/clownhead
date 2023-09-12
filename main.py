@@ -1,5 +1,5 @@
 import json
-from my_ast import File, Loc, Parameter, Function, If, Print, Let, Binary, Var, Call, Int, BinaryOp
+from my_ast import File, Loc, Parameter, Function, If, Print, Let, Binary, Var, Call, Int, BinaryOp, Str
 from codegen import generate_code
 from typing import Dict, Any
 import subprocess
@@ -81,6 +81,9 @@ def convert_expression(data: Dict[str, Any]) -> Any:
     elif kind == "Print":
         value = convert_expression(data["value"])
         return Print(value, location)
+    elif kind == "Str":
+        return Str(value=data["value"], location=convert_location(data["location"]))
+
 
     else:
         raise ValueError(f"Unknown node type: {kind}")
@@ -100,9 +103,8 @@ def dict_to_ast(data: Dict[str, Any]) -> File:
 
 def main():
     try:
-        data = parse_ast_from_json("example.json")
+        data = parse_ast_from_json("print.json")
         ast = dict_to_ast(data)
-        print(f"this is the ast: {ast}")
         mod = generate_code(ast)
 
         print(mod)

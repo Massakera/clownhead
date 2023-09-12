@@ -3,7 +3,7 @@ from llvmlite.ir import values
 from typing import Dict, Tuple, Union, Optional
 from enum import Enum
 
-from my_ast import Binary, Call, Function, If, Print, Var, Let, Int, BinaryOp
+from my_ast import Binary, Call, Function, If, Print, Str, Var, Let, Int, BinaryOp
 
 context = ir.Context()
 module = ir.Module(name="rinha")
@@ -166,6 +166,8 @@ def codegen(node, module, current_symtab, builder):
         return codegen_print(node, module, current_symtab, builder)
     elif isinstance(node, Int):
         return codegen_int(node, module, current_symtab)
+    elif isinstance(node, Str):
+        return codegen_str(node, module, current_symtab, builder)
     else:
         raise CodeGenError(f"Unsupported node type: {type(node)}")
 
@@ -195,6 +197,22 @@ def codegen_int(node, module, current_symtab):
     print("inside codegen_int")
     int_type = ir.IntType(32)
     return ir.Constant(int_type, node.value)
+
+def codegen_str(node, module, current_symtab, builder):
+    print("inside codegen_str")
+    str_val = bytearray(node.value, 'utf8')
+    str_val.append(0)
+    string_type = ir.ArrayType(ir.IntType(8), len(str_val))
+    string_const = ir.Constant(string_type, str_val)
+    global_string = ir.GlobalVariable(module, string_type, name="str_const")
+    global_string.linkage = 'internal'
+    global_string.global_constant = True
+    global_string.initializer = string_const
+
+    # Return a pointer to the first character of the string
+    zero = ir.Constant(ir.IntType(32), 0)  # Index for the gep instruction
+    return builder.gep(global_string, [zero, zero])
+
 
 def codegen_call(node, module, current_symtab, builder):
     print("inside codegen_call")
@@ -315,6 +333,7 @@ def codegen_print(node, module, current_symtab, builder):
     printf_func = declare_printf(module)
     value = codegen(node.value, module, current_symtab, builder)
 
+    # Determine the format string based on the type of the value
     if isinstance(value.type, ir.IntType) and value.type.width == 32:
         format_str = "%d\n"
     elif isinstance(value.type, ir.PointerType) and isinstance(value.type.pointee, ir.IntType) and value.type.pointee.width == 8:
@@ -322,12 +341,14 @@ def codegen_print(node, module, current_symtab, builder):
     else:
         raise CodeGenError("Unsupported type for print operation")
 
+    # Create a global constant for the format string
     format_const = ir.Constant(ir.ArrayType(ir.IntType(8), len(format_str)), bytearray(format_str.encode("utf8")))
     format_global = ir.GlobalVariable(module, format_const.type, name=".str")
     format_global.linkage = 'private'
     format_global.global_constant = True
     format_global.initializer = format_const
 
+    # Get a reference to the start of the format string
     zero = ir.Constant(ir.IntType(32), 0)
     var_ref = format_global.gep([zero, zero])
 
