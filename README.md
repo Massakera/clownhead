@@ -20,4 +20,30 @@ This is specially made for [Rinha de Compiladores](https://github.com/aripiprazo
 
 ## How to run? 
 
-WIP (still a but messy with running main.py and running tools like llvm, llc and clang)
+1. Build the Docker Image
+```bash
+docker build -t clownhead .
+```
+2. To compile your JSON-based AST and generate an executable:
+```bash
+docker run -v <local_path_to_project_directory>:/app clownsmind <input_filename>.json
+```
+Replace **<local_path_to_project_directory>** with the path to your project directory on your local machine, and **<input_filename>**.json with the name of your input file.
+
+For example, if your project is located in ~/Proj/clownhead and your input file is named comb.json, you would run:
+
+```bash
+docker run -v ~/Proj/clownhead:/app clownhead comb.json
+```
+
+3. After running the above command, an LLVM-IR file with the .ll extension and an executable will be generated in your project directory.
+
+For the example above, you would get **comb.ll** and **comb** (the executable).
+
+4. To run the generated executable:
+
+```bash
+./<output_name>
+```
+
+
