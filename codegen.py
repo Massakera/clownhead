@@ -172,7 +172,6 @@ def codegen(node, module, current_symtab, builder):
         raise CodeGenError(f"Unsupported node type: {type(node)}")
 
 def codegen_binary(node, module, current_symtab, builder):
-    print("inside codegen_binary")
     lhs_val = codegen(node.lhs, module, current_symtab, builder)
     rhs_val = codegen(node.rhs, module, current_symtab, builder)
 
@@ -194,12 +193,10 @@ def codegen_binary(node, module, current_symtab, builder):
 
 
 def codegen_int(node, module, current_symtab):
-    print("inside codegen_int")
     int_type = ir.IntType(32)
     return ir.Constant(int_type, node.value)
 
 def codegen_str(node, module, current_symtab, builder):
-    print("inside codegen_str")
     str_val = bytearray(node.value, 'utf8')
     str_val.append(0)
     string_type = ir.ArrayType(ir.IntType(8), len(str_val))
@@ -215,7 +212,6 @@ def codegen_str(node, module, current_symtab, builder):
 
 
 def codegen_call(node, module, current_symtab, builder):
-    print("inside codegen_call")
     func_type, func = current_symtab.lookup(node.callee.text)
     print(f"Looking up {node.callee.text} in symtab:", current_symtab.lookup(node.callee.text))
 
@@ -234,7 +230,6 @@ def codegen_call(node, module, current_symtab, builder):
     return builder.call(callee_value, arg_values)
 
 def codegen_let(let_expr, module, current_symtab, builder):
-    print("inside codegen_let")
     value = codegen(let_expr.value, module, current_symtab, builder)  
     if isinstance(value, ir.Function):
         current_symtab.insert_function(let_expr.name.text, value)
@@ -246,7 +241,6 @@ def codegen_let(let_expr, module, current_symtab, builder):
 def codegen_function(node, module, current_symtab, builder):
     global ANONYMOUS_FUNCTION_COUNT
 
-    print("inside codegen_function")
     int_type = ir.IntType(32)
     param_types = [int_type for _ in node.parameters]
     func_type = ir.FunctionType(int_type, param_types)
@@ -273,7 +267,6 @@ def codegen_function(node, module, current_symtab, builder):
     print(current_symtab.functions)
 
     ret_val = codegen(node.value, module, function_symtab, builder)
-    print("ret_val was triggered")
     builder.ret(ret_val)
     print("Current symtab:", function_symtab.functions)
 
@@ -281,7 +274,6 @@ def codegen_function(node, module, current_symtab, builder):
 
 
 def codegen_if(node, module, current_symtab, builder):
-    print("inside codegen_if")
     cond_val = codegen(node.condition, module, current_symtab, builder)
     func = builder.block.function
 
@@ -310,7 +302,6 @@ def codegen_if(node, module, current_symtab, builder):
     return phi
 
 def codegen_var(node, module, current_symtab, builder):
-    print("inside codegen_var")
     var_type, value = current_symtab.lookup(node.text)
     if var_type == SymbolType.Variable:
         if not value:
@@ -329,7 +320,6 @@ def declare_printf(module):
     return printf_func
 
 def codegen_print(node, module, current_symtab, builder):
-    print("inside codegen_print")
     printf_func = declare_printf(module)
     value = codegen(node.value, module, current_symtab, builder)
 
