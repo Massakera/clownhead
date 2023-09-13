@@ -1,4 +1,4 @@
-from llvmlite import ir
+from llvmlite import ir, binding
 from llvmlite.ir import values
 from typing import Dict, Tuple, Union, Optional
 from enum import Enum
@@ -366,5 +366,11 @@ def generate_code(ast):
     builder = ir.IRBuilder(entry_block)
     
     codegen(ast.expression, module, current_symtab, builder)
-    
+
+    builder.ret_void()
+
+    # Set the target triple and data layout for the module
+    module.triple = "x86_64-pc-linux-gnu"
+    module.data_layout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+   
     return module

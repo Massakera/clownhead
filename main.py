@@ -4,6 +4,8 @@ from codegen import generate_code
 from typing import Dict, Any
 import subprocess
 from llvmlite import binding
+import os
+import sys
 
 def parse_ast_from_json(filename: str) -> Dict[str, Any]:
     with open(filename, 'r') as f:
@@ -103,16 +105,31 @@ def dict_to_ast(data: Dict[str, Any]) -> File:
 
 def main():
     try:
-        data = parse_ast_from_json("print.json")
+        if len(sys.argv) < 2:
+            raise ValueError("Please provide a JSON filename to compile")
+
+        filename = sys.argv[1]
+
+        output_name = os.path.basename(filename).split('.')[0]
+
+        # Convert JSON to AST and then to LLVM IR
+        data = parse_ast_from_json(filename)
         ast = dict_to_ast(data)
         mod = generate_code(ast)
 
-        print(mod)
+        llvm_ir_filename = output_name + ".ll"
+
+        # Print and save the LLVM-IR to an .ll file
+        with open(llvm_ir_filename, 'w') as f:
+            f.write(str(mod))
+
+        os.system(f"clang {llvm_ir_filename} -o {output_name}")
+        print(f"Executable generated as '{output_name}'")
 
     except Exception as e:
         print(f"Error: {e}")
         import traceback
-        traceback.print_exc()  
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
