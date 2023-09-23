@@ -26,7 +26,7 @@ docker build -t clownhead .
 ```
 2. To compile your JSON-based AST and generate an executable:
 ```bash
-docker run -v <local_path_to_project_directory>:/app clownsmind <input_filename>.json
+docker run -v <local_path_to_project_directory>:/app clownhead <input_filename>.json
 ```
 Replace **<local_path_to_project_directory>** with the path to your project directory on your local machine, and **<input_filename>**.json with the name of your input file.
 
