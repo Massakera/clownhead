@@ -105,11 +105,7 @@ def dict_to_ast(data: Dict[str, Any]) -> File:
 
 def main():
     try:
-        if len(sys.argv) < 2:
-            raise ValueError("Please provide a JSON filename to compile")
-
-        filename = sys.argv[1]
-
+        filename = "/var/rinha/source.rinha.json"  # Hardcoded path to the input file
         output_name = os.path.basename(filename).split('.')[0]
 
         # Convert JSON to AST and then to LLVM IR

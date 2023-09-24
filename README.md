@@ -24,16 +24,14 @@ This is specially made for [Rinha de Compiladores](https://github.com/aripiprazo
 ```bash
 docker build -t clownhead .
 ```
-2. To compile your JSON-based AST and generate an executable:
+2. To compile the JSON-based AST and generate an executable, place your input file at /var/rinha/source.rinha.json in your project directory. Then, run the following command:
 ```bash
-docker run -v <local_path_to_project_directory>:/app clownhead <input_filename>.json
+docker run -v <local_path_to_project_directory>:/app clownhead
 ```
-Replace **<local_path_to_project_directory>** with the path to your project directory on your local machine, and **<input_filename>**.json with the name of your input file.
-
-For example, if your project is located in ~/Proj/clownhead and your input file is named comb.json, you would run:
+Replace <local_path_to_project_directory> with the path to your project directory on your local machine. For example, if your project is located in ~/Proj/clownhead, you would run:
 
 ```bash
-docker run -v ~/Proj/clownhead:/app clownhead comb.json
+docker run -v ~/Proj/clownhead:/app clownhead
 ```
 
 3. After running the above command, an LLVM-IR file with the .ll extension and an executable will be generated in your project directory.
